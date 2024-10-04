@@ -1,7 +1,7 @@
 FROM caddy
 
-# 安装 jq 工具
-RUN apk add --no-cache jq
+# 安装 jq 和 rsync 工具
+RUN apk add --no-cache jq rsync
 
 # 复制资源文件
 COPY ./resource/public /var/www/html
@@ -14,14 +14,18 @@ ENV ASSET_PREFIX http://example.com
 RUN cacheBuildId=$(jq -r '.cacheBuildId' /var/www/html/version.json) && \
     # 删除 /var/www/html/template 目录下除 cacheBuildId 同名目录外的所有目录
     find /var/www/html/template -mindepth 1 -maxdepth 1 ! -name "$cacheBuildId" -exec rm -rf {} + && \
-    # 将 ./resource/public/assets/cacheBuildId 目录下的文件复制到一个临时目录
-    mkdir -p /tmp/assets && \
-    cp -r /var/www/html/assets/$cacheBuildId/* /tmp/assets/ && \
     # 清空 /var/www/html/assets 目录
-    rm -rf /var/www/html/assets/* && \
-    # 将临时目录中的文件复制回 /var/www/html/assets 目录中
-    cp -r /tmp/assets/* /var/www/html/assets/ && \
-    # 删除临时目录
+    rm -rf /var/www/html/assets/*
+
+# 确保 assets 文件夹存在
+RUN mkdir -p /tmp/assets && mkdir -p /var/www/html/assets
+
+# 从宿主机复制 ./resource/public/assets 目录
+COPY ./resource/public/assets /tmp/assets
+
+# 确保文件不丢失，使用 rsync 复制
+RUN cacheBuildId=$(jq -r '.cacheBuildId' /var/www/html/version.json) && \
+    rsync -av /tmp/assets/$cacheBuildId/ /var/www/html/assets/ && \
     rm -rf /tmp/assets
 
 # 替换占位符并启动 caddy
